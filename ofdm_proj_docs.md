@@ -1,6 +1,6 @@
 # OFDM Pluto SDR Transceiver - Documentation Overview
 
-This script implements a full OFDM transmitter/receiver chain using an Analog Devices Pluto SDR.
+This script implements a full OFDM transmitter/receiver chain using an Pluto SDR, over the [RemoteRF Platform]([url](https://wireless.ee.ucla.edu/remoterf/)).
 It includes:
 
 - OFDM frame construction (preamble + payload)
