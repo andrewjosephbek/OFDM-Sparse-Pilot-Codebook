@@ -18,12 +18,8 @@ N_sym = 200
 N_fft = 256+1
 N_cp = 16
 
-# Preamble parameters
-preamble_len = (N_fft+N_cp)*2
-
-# total transmission length in samples
+# total transmission payload length in samples
 payload_len = (N_fft+N_cp)*N_sym
-full_frame_len = payload_len + preamble_len
 
 QPSK = np.array([
     (1+1j)/np.sqrt(2),
@@ -42,12 +38,11 @@ QAM16 = np.array([
 # Normalize to unit average power
 QAM16 /= np.sqrt((np.abs(QAM16)**2).mean())
 
-OFDM_constellation = QAM16.copy()
+OFDM_CSTL = QAM16.copy()
 
 pilot_symbol = (1+1j)/np.sqrt(2)
 
-
-# DC subcarrier
+# DC subcarrier index
 dc_idx = N_fft // 2
 
 # Subcarrier assignments 
@@ -72,7 +67,7 @@ sdr.tx_cyclic_buffer = True    # repeat entire frame continuously
 sdr.rx_destroy_buffer()
 sdr.rx_lo = int(fc)
 sdr.rx_rf_bandwidth = int(fs)
-sdr.rx_buffer_size = int(5*full_frame_len)
+sdr.rx_buffer_size = int(5*payload_len) # estimate rx_buffer_size, will change later
 sdr.gain_control_mode_chan0 = "manual"
 sdr.rx_hardwaregain_chan0 = rx_gain_dB
 
@@ -82,11 +77,8 @@ sdr.rx_hardwaregain_chan0 = rx_gain_dB
 # Frequency-domain preamble (size N_fft)
 preamble_fd = np.zeros(N_fft, dtype=complex)
 
-# Active = all except DC
-active_sc = np.r_[0:dc_idx, dc_idx+1:N_fft]
-
 # Assign random QPSK to all active subcarriers
-preamble_fd[active_sc] = np.random.choice(QPSK, size=len(active_sc))
+preamble_fd[active_subcar] = np.random.choice(QPSK, size=len(active_subcar))
 
 # IFFT → time-domain complex preamble
 preamble_td = np.fft.ifft(np.fft.ifftshift(preamble_fd))
@@ -97,16 +89,21 @@ preamble_td = np.concatenate([preamble_td[-N_cp:], preamble_td])
 # Repeat preamble twice for robust correlation
 preamble = np.concatenate([preamble_td, preamble_td])
 
+preamble_len = len(preamble)
+
 ### Build OFDM Payload
 
 # (N_sym x N_fft)  matrix in freq domain
 # (Number of OFDM symbols rows x Number of subcarriers cols)
-M = np.random.choice(OFDM_constellation, size=(N_sym, N_fft))
+M = np.random.choice(OFDM_CSTL, size=(N_sym, N_fft))
 
 M[:, dead_subcar] = 0 
 M[:, pilot_subcar] = pilot_symbol
 
 X = np.zeros((N_fft + N_cp) * N_sym, dtype=complex)
+
+full_frame_len = payload_len + preamble_len
+sdr.rx_buffer_size = int(5*full_frame_len)
 
 # Build time domain OFDM signal
 idx = 0
@@ -151,6 +148,7 @@ rx = sdr.rx()
 L = len(rx)
 
 ### Correlation with OFDM preamble
+
 search_len = min(2 * full_frame_len, len(rx))
 corr = correlate(rx[:search_len], preamble, mode="full")
 corr_abs = np.abs(corr)
@@ -231,8 +229,8 @@ r = rx_flat / np.sqrt(np.mean(np.abs(rx_flat)**2))
 
 rx_dec = np.zeros_like(r, dtype=complex)
 
-dists = np.abs(r[:, None] - OFDM_constellation[None, :])
-rx_dec = OFDM_constellation[np.argmin(dists, axis=1)]
+dists = np.abs(r[:, None] - OFDM_CSTL[None, :])
+rx_dec = OFDM_CSTL[np.argmin(dists, axis=1)]
 
 symbol_errors = np.sum(rx_dec != tx_flat)
 SER = symbol_errors / len(tx_flat)
@@ -242,14 +240,14 @@ print(f"Symbol errors:      {symbol_errors}")
 print(f"SER:                {SER:.6f}")
 
 ### Constellation Plot
-axs[1].scatter(OFDM_constellation.real,
-               OFDM_constellation.imag,
+axs[1].scatter(OFDM_CSTL.real,
+               OFDM_CSTL.imag,
                s=40,
                color="red",
                marker="x",
                label="Ideal")
 axs[1].scatter(rx_flat.real, rx_flat.imag, s=4, color="black")
-axs[1].set_title(f"Equalized Constellation (M = {len(OFDM_constellation)}, Nc = {len(data_subcar)})")
+axs[1].set_title(f"Equalized Constellation (M = {len(OFDM_CSTL)}, Nc = {len(data_subcar)})")
 axs[1].set_xlabel("I")
 axs[1].set_ylabel("Q")
 axs[1].grid(True)
