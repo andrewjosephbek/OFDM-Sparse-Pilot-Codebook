@@ -9,7 +9,6 @@ Ncp        = 16;                   % CP length
 Nsym       = 100;                % Number of OFDM symbols
 fs         = 20e6;                  % Sampling frequency (Hz)
 pilot_sym  = (1+1j)/sqrt(2);       % Base Pilot Symbol P (Constant Phase for LMMSE)
-dead_band_length = 4;
 
 Es         = 1;                    % Average Energy per symbol (for R_NN scaling)
 SNR_dB     = 20;                   % Test SNR in dB
@@ -21,7 +20,13 @@ Npt        = 4;                    % Pilot transmission time period (transmit ev
 Npf        = 4;                           % Pilot transmission freq period (transmit every 4th symbol)
 Ncirc_permute = 0;
 
-%% Monte Carlo
+% Sweep Params
+Npf_array = [2, 4, 8, 16];
+Npt_array = [1, 2, 4, 8];
+tau_array = [10e-9, 50e-9, 100e-9, 200e-9];
+fD_array = [1, 10, 50, 100];
+
+% Monte Carlo
 Ntrials = 100;
 AVG_SER = 0;
 AVG_BER = 0;
@@ -30,8 +35,14 @@ AVG_Goodput = 0;
 AVG_H_ERROR = 0;
 AVG_H_MAG = 0;
 
+% Dead carrier bounds
+dead_band_length = 4;
+dead_lower = 4;
+dead_upper = Nfft-4;
+
+
 % Subcarriers
-dead_carriers = [1:dead_band_length, ceil(Nfft/2), dead_upper:(Nfft-dead_band_length)];
+dead_carriers = [1:dead_lower, ceil(Nfft/2), dead_upper:Nfft];
 pilot_carriers = generate_pilots(dead_lower+1, dead_upper-1, Npf); 
 all_carriers = 1:Nfft;
 live_carriers = array_set_difference(all_carriers, dead_carriers);

@@ -6,30 +6,34 @@ clear;
 M          = 16;                   % QAM order
 Nfft       = 64+1;                 % OFDM size (Carriers, must be odd)
 Ncp        = 16;                   % CP length
-Nsym       = 100;                % Number of OFDM symbols
-fs         = 20e6;                  % Sampling frequency (Hz)
+Nsym       = 100;                  % Number of OFDM symbols
+fs         = 20e6;                 % Sampling frequency (Hz)
 pilot_sym  = (1+1j)/sqrt(2);       % Base Pilot Symbol P (Constant Phase for LMMSE)
 dead_band_length = 4;
 
 Es         = 1;                    % Average Energy per symbol (for R_NN scaling)
 SNR_dB     = 20;                   % Test SNR in dB
-tau_rms    = 10e-9;              % RMS Delay Spread (100 ns) - For R_HH construction
+tau_rms    = 10e-9;                % RMS Delay Spread (100 ns) - For R_HH construction
 fD         = 1;                    % Max Doppler Spread (5 Hz) - For channel model
 
 % --- ADAPTIVE CODEBOOK PARAMETERS (TESTING SCENARIO) ---
 Npt        = 4;                    % Pilot transmission time period (transmit every 4th symbol)
-Npf        = 4;                           % Pilot transmission freq period (transmit every 4th symbol)
+Npf        = 4;                    % Pilot transmission freq period (transmit every 4th symbol)
 Ncirc_permute = 0;
+
+% Sweep Params
+Npt_vals = [2, 4, 8, 16];
+Npf_vals = [1, 2, 4, 8];
+
+tau_vals = [10e-9, 50e-9, 100e-9, 200e-9];
+fD_vals = [1, 10, 50, 100];
 
 %% Monte Carlo
 Ntrials = 100;
-AVG_SER = 0;
-AVG_BER = 0;
-AVG_Goodput = 0;
 
+AVG_SER = 0; AVG_BER = 0; AVG_Goodput = 0;
 AVG_H_ERROR = 0;
 AVG_H_MAG = 0;
-
 
 % Subcarriers
 dead_carriers = [1:dead_band_length, ceil(Nfft/2), dead_upper:(Nfft-dead_band_length)];
@@ -37,21 +41,18 @@ pilot_carriers = generate_pilots(dead_lower+1, dead_upper-1, Npf);
 all_carriers = 1:Nfft;
 live_carriers = array_set_difference(all_carriers, dead_carriers);
 
+
 for n = 1:Ntrials
 
     % 3. TRANSMITTER (TX)
-    [tx, Xt, Xf, X_data_mask, X_pilot_mask] = build_OFDM_tx(Nfft, Nsym, Ncp, M, pilot_carriers, dead_carriers, pilot_sym, Npt, Ncirc_permute);
-    
+    [tx, Xt, Xf, X_data_mask, X_pilot_mask] = build_OFDM_tx(Nfft, Nsym, Ncp, M, pilot_carriers, dead_carriers, pilot_sym, Npt, Ncirc_permute)
     % 4. CHANNEL MODEL
     rx_serial = apply_fading_channel(tx, fs, fD, tau_rms, SNR_dB, 1);
-
     % 5. RECEIVER CORE (RX Core)
     Yf = build_OFDM_rx_core(rx_serial, Nfft, Ncp, Nsym);
-
     % 6. EQUALIZATION (LMMSE)
     [Y_eq, Hf_est] = equalize_ofdm_data(Yf, X_data_mask, X_pilot_mask, Nfft, pilot_carriers, dead_carriers, live_carriers, pilot_sym, Ncirc_permute);
     [Hf_true] = genie_channel(Yf, Xf, live_carriers);
-
     % 7. DEMODULATION AND SER CALCULATION
     [SER, BER, Goodput_bps, H_error, H_mag] = calculate_performance_metrics(Y_eq, Xf, X_data_mask, Hf_true, Hf_est, tx, M, Nfft, Ncp);
 
