@@ -1,91 +1,108 @@
-% --- OFDM_SIMULATION_SCRIPT.M (Executable Code Block) ---
+% --- MONTE CARLO SWEEP DRIVER ---
+clear; clc;
 
-clear; 
-
-%% 1. SYSTEM PARAMETERS AND CHANNEL INPUTS
-M          = 16;                   % QAM order
-Nfft       = 64+1;                 % OFDM size (Carriers, must be odd)
-Ncp        = 16;                   % CP length
-Nsym       = 100;                % Number of OFDM symbols
-fs         = 20e6;                  % Sampling frequency (Hz)
-pilot_sym  = (1+1j)/sqrt(2);       % Base Pilot Symbol P (Constant Phase for LMMSE)
-
-Es         = 1;                    % Average Energy per symbol (for R_NN scaling)
-SNR_dB     = 20;                   % Test SNR in dB
-tau_rms    = 10e-9;              % RMS Delay Spread (100 ns) - For R_HH construction
-fD         = 1;                    % Max Doppler Spread (5 Hz) - For channel model
-
-% --- ADAPTIVE CODEBOOK PARAMETERS (TESTING SCENARIO) ---
-Npt        = 4;                    % Pilot transmission time period (transmit every 4th symbol)
-Npf        = 4;                           % Pilot transmission freq period (transmit every 4th symbol)
-Ncirc_permute = 0;
-
-% Sweep Params
-Npf_array = [2, 4, 8, 16];
-Npt_array = [1, 2, 4, 8];
-tau_array = [10e-9, 50e-9, 100e-9, 200e-9];
-fD_array = [1, 10, 50, 100];
-
-% Monte Carlo
-Ntrials = 100;
-AVG_SER = 0;
-AVG_BER = 0;
-AVG_Goodput = 0;
-
-AVG_H_ERROR = 0;
-AVG_H_MAG = 0;
-
-% Dead carrier bounds
-dead_band_length = 4;
+% SYSTEM PARAMETERS (Copied from your script block for clarity)
+M          = 16;
+Nfft       = 65;
+Ncp        = 16;
+Nsym       = 100;
+fs         = 20e6;
+pilot_sym  = (1+1j)/sqrt(2);
+Es         = 1;
+SNR_dB     = 20;
 dead_lower = 4;
 dead_upper = Nfft-4;
-
-
-% Subcarriers
 dead_carriers = [1:dead_lower, ceil(Nfft/2), dead_upper:Nfft];
-pilot_carriers = generate_pilots(dead_lower+1, dead_upper-1, Npf); 
-all_carriers = 1:Nfft;
-live_carriers = array_set_difference(all_carriers, dead_carriers);
 
-for n = 1:Ntrials
+% SWEEP ARRAYS
+Nf_array = [2, 4, 8, 16];
+Nt_array = [1, 2, 4, 8];
+tau_array = [10e-9, 50e-9, 100e-9, 200e-9];
+fD_array = [1, 10, 50, 100];
+Ntrials = 100;
 
-    % 3. TRANSMITTER (TX)
-    [tx, Xt, Xf, X_data_mask, X_pilot_mask] = build_OFDM_tx(Nfft, Nsym, Ncp, M, pilot_carriers, dead_carriers, pilot_sym, Npt, Ncirc_permute);
+% RESULT STORAGE
+NMSE_freq_sweep = zeros(length(Nf_array), length(tau_array));
+NMSE_time_sweep = zeros(length(Nt_array), length(fD_array));
+
+%% A. FIGURE 1: FREQUENCY SELECTIVITY SWEEP (Optimize Nf)
+fD_fixed = 1; % Low Doppler
+Nt_fixed = 1; % Pilot every symbol
+
+disp('--- Running Frequency Selectivity Sweep (Figure 1) ---');
+for i = 1:length(Nf_array) % Loop over pilot spacing curves
+    Nf_sweep = Nf_array(i);
     
-    % 4. CHANNEL MODEL
-    rx_serial = apply_fading_channel(tx, fs, fD, tau_rms, SNR_dB, 1);
-
-    % 5. RECEIVER CORE (RX Core)
-    Yf = build_OFDM_rx_core(rx_serial, Nfft, Ncp, Nsym);
-
-    % 6. EQUALIZATION (LMMSE)
-    [Y_eq, Hf_est] = equalize_ofdm_data(Yf, X_data_mask, X_pilot_mask, Nfft, pilot_carriers, dead_carriers, live_carriers, pilot_sym, Ncirc_permute);
-    [Hf_true] = genie_channel(Yf, Xf, live_carriers);
-
-    % 7. DEMODULATION AND SER CALCULATION
-    [SER, BER, Goodput_bps, H_error, H_mag] = calculate_performance_metrics(Y_eq, Xf, X_data_mask, Hf_true, Hf_est, tx, M, Nfft, Ncp);
-
-    AVG_SER = AVG_SER + SER;
-    AVG_BER = AVG_BER + BER;
-    AVG_Goodput = AVG_Goodput + Goodput_bps;
-    AVG_H_ERROR = AVG_H_ERROR + H_error;
-    AVG_H_MAG = AVG_H_MAG + H_mag;
+    % Recalculate pilot carriers as they depend on Nf
+    pilot_carriers_freq = generate_pilots(dead_lower+1, dead_upper-1, Nf_sweep);
+    
+    for j = 1:length(tau_array) % Loop over x-axis points
+        tau_sweep = tau_array(j);
+        
+        % Run Monte Carlo average for this (Nf, tau_rms) combination
+        NMSE_freq_sweep(i, j) = run_monte_carlo_trial(Ntrials, Nfft, Nsym, Ncp, M, pilot_carriers_freq, dead_carriers, pilot_sym, Nt_fixed, Nf_sweep, Es, tau_sweep, fD_fixed, SNR_dB);
+        
+        disp(['  Completed Nf=', num2str(Nf_sweep), ', tau=', num2str(tau_sweep*1e9), ' ns']);
+    end
 end
 
-AVG_SER = AVG_SER / Ntrials;
-AVG_BER = AVG_BER  / Ntrials;
-AVG_Goodput = AVG_Goodput / Ntrials;
-AVG_H_ERROR = AVG_H_ERROR / Ntrials;
-AVG_H_MAG = AVG_H_MAG / Ntrials;
+%% B. FIGURE 2: TIME VARYING SWEEP (Optimize Nt)
+tau_fixed = 10e-9; % Low Delay Spread
+Nf_fixed = 4;    % Dense frequency pilot
+pilot_carriers_time = generate_pilots(dead_lower+1, dead_upper-1, Nf_fixed);
 
-AVG_H_MSE = AVG_H_ERROR / AVG_H_MAG;
+disp('--- Running Time Variation Sweep (Figure 2) ---');
+for i = 1:length(Nt_array) % Loop over time spacing curves
+    Nt_sweep = Nt_array(i);
+    
+    for j = 1:length(fD_array) % Loop over x-axis points
+        fD_sweep = fD_array(j);
+        
+        % Run Monte Carlo average for this (Nt, fD) combination
+        NMSE_time_sweep(i, j) = run_monte_carlo_trial(Ntrials, Nfft, Nsym, Ncp, M, pilot_carriers_time, dead_carriers, pilot_sym, Nt_sweep, Nf_fixed, Es, tau_fixed, fD_sweep, SNR_dB);
+        
+        disp(['  Completed Nt=', num2str(Nt_sweep), ', fD=', num2str(fD_sweep), ' Hz']);
+    end
+end
 
-%% 9. FINAL RESULTS DISPLAY
-disp(['Average Symbol Error Rate (SER): ', num2str(AVG_SER)]);
-disp(['Average Bit Error Rate (BER):    ', num2str(AVG_BER)]);
-disp(['Average Goodput (bits/sample):   ', num2str(AVG_Goodput)]);
-disp(['Average H MSE:   ', num2str(AVG_H_MSE)]);
-disp('--------------------------------------');
+
+%% C. PLOT GENERATION
+figure(1);
+hold on;
+% Loop through rows (Nf values) of the result matrix to plot curves
+for i = 1:length(Nf_array)
+    plot(tau_array*1e9, NMSE_freq_sweep(i, :), 'o-', 'DisplayName', ['Nf = ', num2str(Nf_array(i))]);
+end
+title('Figure 1: NMSE vs. Delay Spread (Frequency Selectivity)');
+xlabel('RMS Delay Spread \tau_{rms} (ns)');
+ylabel('NMSE (Normalized Mean Square Error)');
+set(gca, 'YScale', 'log'); % NMSE is typically plotted on a log scale
+grid on;
+legend('show', 'Location', 'NorthWest');
+
+figure(2);
+hold on;
+% Loop through rows (Nt values) of the result matrix to plot curves
+for i = 1:length(Nt_array)
+    plot(fD_array, NMSE_time_sweep(i, :), 'x-', 'DisplayName', ['Nt = ', num2str(Nt_array(i))]);
+end
+title('Figure 2: NMSE vs. Doppler Spread (Time Variation)');
+xlabel('Maximum Doppler Spread f_D (Hz)');
+ylabel('NMSE (Normalized Mean Square Error)');
+set(gca, 'YScale', 'log');
+grid on;
+legend('show', 'Location', 'NorthWest');
+
+%% D. (Hypothetical) Final Codebook Definition (Based on Expected Results)
+% Example conclusion logic: Select the pattern that crosses NMSE = 1e-2 last.
+% This section would be part of your final report analysis.
+
+% %% 9. FINAL RESULTS DISPLAY
+% disp(['Average Symbol Error Rate (SER): ', num2str(AVG_SER)]);
+% disp(['Average Bit Error Rate (BER):    ', num2str(AVG_BER)]);
+% disp(['Average Goodput (bits/sample):   ', num2str(AVG_Goodput)]);
+% disp(['Average H MSE:   ', num2str(AVG_H_MSE)]);
+% disp('--------------------------------------');
 
 
 function [pilots] = generate_pilots(K, L, density)
@@ -463,4 +480,87 @@ function [SER, BER, Goodput_bps, H_error, H_mag] = calculate_performance_metrics
     % This measures the magnitude of the true channel response.
     H_mag = sum(abs(Hf_true).^2, 'all');
 
+end
+
+function avg_NMSE = run_monte_carlo_trial(Ntrials, Nfft, Nsym, Ncp, M, pilot_carriers, dead_carriers, pilot_sym, Npt, Npf, Es, tau_rms, fD, SNR_dB, fs)
+% RUN_MONTE_CARLO_TRIAL Executes the full simulation Ntrials times for fixed parameters.
+%
+%   avg_NMSE = RUN_MONTE_CARLO_TRIAL(...) returns the NMSE averaged over all trials.
+%
+%   Note: This function assumes helper functions (build_OFDM_tx, build_OFDM_rx_core, 
+%   equalize_ofdm_data, apply_fading_channel, construct_RHH, etc.) are available 
+%   in the same scope or path.
+
+    % Initialize accumulators for the total error power and total true power across all trials
+    Total_H_Error = 0;
+    Total_H_Mag = 0;
+
+    % --- Required Channel Pre-calculation ---
+    % Since Nct is not passed, assume Nct = Npt for the time-varying test, or 
+    % a fixed constant for the frequency sweep. Let's assume Nct = Npt for simplicity.
+    Nct = Npt; 
+    
+    % Get the live carrier indices once
+    all_carriers = 1:Nfft;
+    live_carriers = array_set_difference(all_carriers, dead_carriers);
+
+    for n = 1:Ntrials
+        % 1. RANDOMNESS CONTROL: Set the seed for channel/data generation
+        % Using a trial-specific seed ensures a new random sequence for every run.
+        seed = randi([1, 1000000]); 
+        rng(seed);
+
+        % --- TX STACK ---
+        % Npf is used as the density parameter in generate_pilots (must be fixed before TX)
+        pilot_carriers_trial = generate_pilots(dead_carriers(end-1)+1, Nfft-dead_carriers(end-1), Npf);
+        
+        % Transmit (generates random data, Xf, and masks)
+        [tx, Xt, X_data_mask, X_pilot_mask, ~] = build_OFDM_tx(Nfft, Nsym, Ncp, M, pilot_carriers_trial, dead_carriers, pilot_sym, Npt, Nct);
+        
+        % --- TRUE H ACQUISITION ---
+        % Get the noise-free channel response (H_true) for NMSE comparison.
+        % H_true is acquired by running an impulse through the channel at the *same* seed.
+        
+        % 1. Get the time-domain impulse input (assuming a helper function exists)
+        tx_impulse = build_OFDM_impulse(Nfft, Nsym, Ncp);
+        
+        % 2. Apply channel (Noise-Free)
+        rng(seed); % Must reset seed for H_true acquisition
+        rx_impulse = apply_fading_channel(tx_impulse, Nfft, Ncp, Nsym, fs, fD, tau_rms, SNR_dB, 0); % use_AWGN=0
+        
+        % 3. Extract True CFR Hf_true
+        [Hf_true, ~, ~] = build_OFDM_rx_core(rx_impulse, Nfft, Ncp, Nsym, X_data_mask, X_pilot_mask);
+        Hf_true_live = Hf_true(live_carriers, :);
+
+        % --- RX AND EQUALIZATION STACK ---
+        
+        % 4. Apply Channel to DATA (Fading + AWGN)
+        rng(seed); % Must reset seed for the data channel run
+        rx_serial = apply_fading_channel(tx, Nfft, Ncp, Nsym, fs, fD, tau_rms, SNR_dB, 1); % use_AWGN=1
+        
+        % 5. Receiver Core
+        [Yf, Y_pilots_rx, ~] = build_OFDM_rx_core(rx_serial, Nfft, Ncp, Nsym, X_data_mask, X_pilot_mask);
+        
+        % 6. Equalization (Generates the Estimated H)
+        [~, Hf_est] = equalize_ofdm_data(Yf, Y_pilots_rx, X_data_mask, X_pilot_mask, Nfft, pilot_carriers_trial, dead_carriers, live_carriers, pilot_sym, Npt, Es, tau_rms, Nct);
+        Hf_est_live = Hf_est(live_carriers, :); % Extract only the estimated live carriers
+        
+        % --- NMSE CALCULATION (Trial Contribution) ---
+        
+        % Numerator: Total Squared Error Power
+        Trial_Error_Power = sum(abs(Hf_true_live - Hf_est_live).^2, 'all');
+        
+        % Denominator: Total True Channel Power
+        Trial_True_Power = sum(abs(Hf_true_live).^2, 'all');
+        
+        % Accumulate results
+        Total_H_Error = Total_H_Error + Trial_Error_Power;
+        Total_H_Mag = Total_H_Mag + Trial_True_Power;
+        
+        % IMPORTANT: Release the channel object state after each trial if needed
+        % (This assumes channel is defined inside apply_fading_channel and handled by MATLAB)
+    end
+
+    % Final NMSE: Average over all trials
+    avg_NMSE = Total_H_Error / Total_H_Mag;
 end
