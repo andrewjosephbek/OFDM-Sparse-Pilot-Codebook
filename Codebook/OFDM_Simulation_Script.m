@@ -3,7 +3,7 @@ clear; close all;
 
 % Monte Carlo Trials
 Ntrials = 100;
-sweep_pts = 4;
+sweep_pts = 21;
 
 % SYSTEM PARAMETERS
 M          = 4;                   % QAM order
@@ -12,7 +12,7 @@ Ncp        = 16;                   % CP length
 Nsym       = 1000;                  % Number of OFDM symbols
 fs         = 20e6;                  % Sampling frequency (Hz)
 pilot_sym  = (1+1j)/sqrt(2);       % Base Pilot Symbol P (Constant Phase for LMMSE)
-dead_band_length = 4;
+dead_band_length = 2;
 
 % ADAPTIVE CODEBOOK PARAMETERS
 Ncirc      = 1;                    % DISABLED ... Circularly permute pilot position for each row by Ncirc_permute
@@ -102,11 +102,11 @@ for i = 1:length(tau_array)
 
    if(sum(thresh_mask) == 0)
         gp_adaptive_f(i) = B(1);
-        disp(['tau RMS: ', tau_array(i), '   Nf = min'])
+        disp(['tau RMS: ', num2str(tau_array(i)*10^9), ' ns   Nf = min'])
 
    else
         gp_adaptive_f(i) = B(best_idx);
-        disp(['tau RMS: ', tau_array(i), '   Nf = ', num2str(best_spacing)])
+        disp(['tau RMS: ', num2str(tau_array(i)*10^9), ' ns   Nf = ', num2str(best_spacing)])
    end
 end
 
@@ -121,24 +121,40 @@ for i = 1:length(fD_array)
    B = GP_time_sweep(:, i);
    thresh_mask = A < thresh_f;
    good_idxs =  find(thresh_mask);
-
+   
    best_idx = max(good_idxs);
    best_spacing = Npt_array(best_idx);
    
    if(sum(thresh_mask) == 0)
         gp_adaptive_t(i) = B(1);
-        disp(['tau RMS: ', tau_array(i), '   Nt = min'])
+        disp(['fD: ', num2str(fD_array(i)), ' Hz   Nt = min'])
    else
         gp_adaptive_t(i) = B(best_idx);
-        disp(['tau RMS: ', tau_array(i), '   Nt = ', num2str(best_spacing)])
+        disp(['fD: ', num2str(fD_array(i)), ' Hz   Nt = ', num2str(best_spacing)])
    end
 end
 
-disp(['  Mean Goodputgain over delay sweep:  ', num2str(mean(gp_adaptive_f - GP_freq_sweep(1, :))/mean(GP_freq_sweep(1, :))), '%']);
-disp(['  Mean Goodputgain over doppler sweep:', num2str(mean(gp_adaptive_t - GP_time_sweep(1, :))/mean(GP_time_sweep(1, :))), '%']);
+avg_gp_gain_f = mean(gp_adaptive_f - GP_freq_sweep(1, :));
+avg_gp_f = mean(GP_freq_sweep(1, :));
+
+gp_gain_pct_f = (avg_gp_gain_f / avg_gp_f) * 100;
+
+avg_gp_gain_t = mean(gp_adaptive_t - GP_time_sweep(1, :));
+avg_gp_t = mean(GP_time_sweep(1, :));
+
+gp_gain_pct_t = (avg_gp_gain_t / avg_gp_t) * 100;
+
+disp(['  Mean Goodputgain over delay sweep:  ', num2str(gp_gain_pct_f), '%']);
+disp(['  Mean Goodputgain over doppler sweep:', num2str(gp_gain_pct_t), '%']);
 
 
 %% PLOT GENERATION
+
+set(groot, 'defaultAxesFontName', 'Times New Roman');
+set(groot, 'defaultTextFontName', 'Times New Roman');
+set(groot, 'defaultLegendFontName', 'Times New Roman');
+set(groot, 'defaultColorbarFontName', 'Times New Roman');
+
 
 % Convert tau_array to nanoseconds for clean plotting
 tau_ns = tau_array * 1e9;
@@ -149,7 +165,7 @@ hold on;
 for i = 1:length(Npf_array)
     plot(tau_ns, NMSE_freq_sweep(i, :), 'DisplayName', ['N_f = ', num2str(Npf_array(i))]);
 end
-title('Figure 1: NMSE vs. Delay Spread (Frequency Selectivity)');
+title('NMSE vs. Delay Spread (Frequency Selectivity)');
 xlabel('RMS Delay Spread \tau_{rms} (ns)');
 ylabel('NMSE (Normalized Mean Square Error)');
 % set(gca, 'YScale', 'log');
@@ -162,7 +178,7 @@ hold on;
 for i = 1:length(Npt_array)
     plot(fD_array, NMSE_time_sweep(i, :), 'DisplayName', ['N_t = ', num2str(Npt_array(i))]);
 end
-title('Figure 2: NMSE vs. Doppler Spread (Time Selectivity)');
+title('NMSE vs. Doppler Spread (Time Selectivity)');
 xlabel('Maximum Doppler Spread f_D (Hz)');
 ylabel('NMSE (Normalized Mean Square Error)');
 % set(gca, 'YScale', 'log');
@@ -175,7 +191,7 @@ hold on;
 for i = 1:length(Npf_array)
     plot(tau_ns, BER_freq_sweep(i, :), 'DisplayName', ['N_f = ', num2str(Npf_array(i))]);
 end
-title('Figure 3: BER vs. Delay Spread (Frequency Selectivity)');
+title('BER vs. Delay Spread (Frequency Selectivity)');
 xlabel('RMS Delay Spread \tau_{rms} (ns)');
 ylabel('BER (Bit Error)');
 % set(gca, 'YScale', 'log');
@@ -188,7 +204,7 @@ hold on;
 for i = 1:length(Npt_array)
     plot(fD_array, BER_time_sweep(i, :), 'DisplayName', ['N_t = ', num2str(Npt_array(i))]);
 end
-title('Figure 4: BER vs. Doppler Spread (Time Selectivity)');
+title('BER vs. Doppler Spread (Time Selectivity)');
 xlabel('Maximum Doppler Spread f_D (Hz)');
 ylabel('BER (Bit Error)');
 % set(gca, 'YScale', 'log');
@@ -201,12 +217,12 @@ hold on;
 for i = 1:length(Npf_array)
     plot(tau_ns, GP_freq_sweep(i, :), 'DisplayName', ['N_f = ', num2str(Npf_array(i))]);
 end
-title('Figure 5: Goodput vs. Delay Spread (Frequency Selectivity)');
+title('Goodput vs. Delay Spread (Frequency Selectivity)');
 xlabel('RMS Delay Spread \tau_{rms} (ns)');
-ylabel('Goodput (Bits/second)');
+ylabel('Goodput (Bits/symbol)');
 % set(gca, 'YScale', 'log');
 grid on;
-legend('show', 'Location', 'NorthWest');
+legend('show', 'Location', 'NorthEast');
 
 figure(6);
 
@@ -214,12 +230,12 @@ hold on;
 for i = 1:length(Npt_array)
     plot(fD_array, GP_time_sweep(i, :), 'DisplayName', ['N_t = ', num2str(Npt_array(i))]);
 end
-title('Figure 6: Goodput vs. Doppler Spread (Time Selectivity)');
+title('Goodput vs. Doppler Spread (Time Selectivity)');
 xlabel('Maximum Doppler Spread f_D (Hz)');
-ylabel('Goodput (Bits/second)');
+ylabel('Goodput (Bits/symbol)');
 % set(gca, 'YScale', 'log');
 grid on;
-legend('show', 'Location', 'NorthWest');
+legend('show', 'Location', 'NorthEast');
 
 figure(7);
 
@@ -227,44 +243,44 @@ hold on;
 plot(fD_array, gp_adaptive_f, 'DisplayName', ['N_f = adaptive']);
 plot(fD_array, GP_freq_sweep(1, :), 'DisplayName', ['N_f = 2']);
 
-title('Figure 7: Adaptive Goodput (Frequency Selectivity Sweep)');
+title('Adaptive Goodput (Frequency Selectivity Sweep)');
 xlabel('RMS Delay Spread \tau_{rms} (ns)');
-ylabel('Goodput (Bits/second)');
+ylabel('Goodput (Bits/symbol)');
 % set(gca, 'YScale', 'log');
 grid on;
-legend('show', 'Location', 'NorthWest');
+legend('show', 'Location', 'NorthEast');
 
 
 figure(8);
 
 hold on;
 plot(fD_array, gp_adaptive_t, 'DisplayName', ['N_t = adaptive']);
-plot(fD_array, GP_time_sweep(1, :), 'DisplayName', ['N_t = 16']);
-title('Figure 8: Adaptive Goodput (Time Selectivity Sweep)');
+plot(fD_array, GP_time_sweep(1, :), 'DisplayName', ['N_t = 100']);
+title('Adaptive Goodput (Time Selectivity Sweep)');
 xlabel('Maximum Doppler Spread f_D (Hz)');
-ylabel('Goodput (Bits/second)');
+ylabel('Goodput (Bits/symbol)');
 % set(gca, 'YScale', 'log');
 grid on;
-legend('show', 'Location', 'NorthWest');
+legend('show', 'Location', 'NorthEast');
 
 FolderName = "C:\Users\andre\Documents\GitHub\239-Project\figs";
 
-% %% Save figures 1 through 8
-% for figNum = 1:8
-%     figure(figNum); % bring figure to focus (optional but safe)
-%     fig = gcf;
-% 
-%     fig.Units = 'inches';
-%     fig.Position = [1 1 6 4];   % change this to your preferred size
-% 
-%     lines = findall(fig, 'Type', 'Line');
-%     set(lines, 'LineWidth', 1.5);
-%     filename = fullfile(FolderName, sprintf('Figure%d.png', figNum));
-% 
-%     % Save as PNG at high resolution
-%     saveas(gcf, filename);
-%     % Alternatively (higher quality):
-%     % exportgraphics(gcf, filename, 'Resolution', 300);
-% end
-% 
-% disp('All figures saved successfully.');
+%% Save figures 1 through 8
+for figNum = 1:8
+    figure(figNum); % bring figure to focus (optional but safe)
+    fig = gcf;
+
+    fig.Units = 'inches';
+    fig.Position = [1 1 6 4];   % change this to your preferred size
+
+    lines = findall(fig, 'Type', 'Line');
+    set(lines, 'LineWidth', 1.5);
+    filename = fullfile(FolderName, sprintf('Figure%d.png', figNum));
+
+    % Save as PNG at high resolution
+    saveas(gcf, filename);
+    % Alternatively (higher quality):
+    % exportgraphics(gcf, filename, 'Resolution', 300);
+end
+
+disp('All figures saved successfully.');
