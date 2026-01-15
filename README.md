@@ -1,6 +1,6 @@
 # Sparse-Pilot OFDM Transceiver: Adaptive Codebook Design
 
-This repository contains the implementation of an adaptive 2D pilot codebook for OFDM systems. The system is designed to optimize spectral efficiency and goodput by dynamically selecting pilot patterns based on real-time channel conditions, specifically tracking delay spread and Doppler spread.
+This repository contains the implementation of an adaptive 2D pilot codebook for OFDM systems. The system is designed to optimize spectral efficiency and goodput by dynamically selecting pilot patterns based on real-time channel conditions, specifically tracking delay spread and Doppler spread. See the [report](https://github.com/andrewjosephbek/OFDM-Sparse-Pilot-Codebook/blob/main/Andrew-Josephbek_Adaptive%202D%20Pilot%20Codebook%20Design%20for%20Overhead%20Minimization%20in%20OFDM%20Systems.pdf) for details on codebook creation.
 
 ## Project Overview
 
